@@ -14,7 +14,7 @@
 
 ## Features
 
-- **No login required** — reuses Claude Code CLI's Keychain token automatically
+- **No login required** — automatically reuses Claude Code CLI's stored credentials (Keychain, with `~/.claude/.credentials.json` fallback)
 - **Official OAuth API** — no screen scraping, official authentication only
 - **Lightweight & native** — SwiftUI + URLSession, no Electron or WebView
 
@@ -42,8 +42,7 @@ make install
 
 Builds the app and installs it to `~/Applications/Claude UsageBar.app`.
 
-> **Keychain popup appearing repeatedly?**  
-> Run `make setup-keychain` once to permanently grant access. Requires your macOS login password.
+> Tokens are read from the Keychain the same way the Claude Code CLI does (via the `security` tool), so no password popup appears. If the Keychain item is missing, the app falls back to `~/.claude/.credentials.json` — the file Claude Code uses when the Keychain is unavailable.
 
 ## Optional: Claude Code Usage Metrics
 

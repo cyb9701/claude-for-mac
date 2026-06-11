@@ -14,7 +14,7 @@
 
 ## 주요 기능
 
-- **로그인 불필요** — Claude Code CLI의 Keychain 토큰을 자동으로 재사용
+- **로그인 불필요** — Claude Code CLI가 저장한 자격증명을 자동으로 재사용 (Keychain, 없으면 `~/.claude/.credentials.json` 폴백)
 - **공식 OAuth API** — 화면 스크래핑 없이 공식 인증 방식만 사용
 - **경량 네이티브 앱** — SwiftUI + URLSession, Electron 및 WebView 미사용
 
@@ -42,8 +42,7 @@ make install
 
 `~/Applications/Claude UsageBar.app`에 앱을 빌드하고 설치합니다.
 
-> **Keychain 팝업이 반복적으로 나타나나요?**  
-> `make setup-keychain`을 한 번 실행하면 영구적으로 접근 권한이 부여됩니다. macOS 로그인 비밀번호가 필요합니다.
+> 토큰은 Claude Code CLI와 동일한 방식(`security` 도구)으로 Keychain에서 읽으므로 비밀번호 팝업이 나타나지 않습니다. Keychain 항목이 없으면 Claude Code가 Keychain 미사용 환경에서 사용하는 `~/.claude/.credentials.json` 파일을 대신 읽습니다.
 
 ## 선택: Claude Code 사용량 메트릭 활성화
 

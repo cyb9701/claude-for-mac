@@ -11,15 +11,14 @@ ICNS_FILE    = /tmp/AppIcon.icns
 # 인증서가 없으면 ad-hoc(-) 서명으로 자동 폴백된다.
 # 환경 변수 또는 Makefile.local에서 오버라이드 가능 (개인정보 보호).
 CERT_NAME    ?= $(CODESIGN_CERT_NAME)
-TEAM_ID      ?= $(CODESIGN_TEAM_ID)
 ENTITLEMENTS = ClaudeUsageBar.entitlements
 
-# Makefile.local이 존재하면 로드하여 CERT_NAME, TEAM_ID 등을 오버라이드한다.
+# Makefile.local이 존재하면 로드하여 CERT_NAME 등을 오버라이드한다.
 -include Makefile.local
 
 # ─── 기본 타겟 ────────────────────────────────────────────
 
-.PHONY: all build install update uninstall run clean help setup-keychain _icon _codesign
+.PHONY: all build install update uninstall run clean help _icon _codesign
 
 all: help
 
@@ -30,7 +29,6 @@ help:
 	@echo ""
 	@echo "  make install         빌드 후 ~/Applications 에 설치 (최초 1회)"
 	@echo "  make update          재빌드 후 기존 설치 업데이트"
-	@echo "  make setup-keychain  Keychain ACL 초기 설정 (최초 1회, 팝업 영구 해결)"
 	@echo "  make run             빌드 후 터미널에서 직접 실행 (개발용)"
 	@echo "  make uninstall       ~/Applications 에서 삭제"
 	@echo "  make clean           빌드 캐시 삭제"
@@ -71,24 +69,6 @@ _codesign:
 	    --entitlements "$(ENTITLEMENTS)" \
 	    "$(APP_BUNDLE)" 2>/dev/null || \
 	  codesign --force --deep --sign - "$(APP_BUNDLE)" 2>/dev/null || true
-
-# ─── Keychain ACL 설정 ───────────────────────────────────
-
-## Keychain ACL 초기 설정 (최초 1회 실행)
-##
-## "Claude Code-credentials" 항목의 partition_id에 TeamID를 추가해서
-## make update 이후에도 Keychain 팝업이 재발하지 않도록 한다.
-## 실행 시 macOS 로그인 비밀번호를 한 번 입력해야 한다.
-setup-keychain:
-	@echo "▶ Keychain partition_id 설정 중..."
-	@echo "  (macOS 로그인 비밀번호 입력 팝업이 한 번 나타납니다)"
-	@security set-generic-password-partition-list \
-	    -S "apple-tool:,apple:,teamid:$(TEAM_ID)" \
-	    -s "Claude Code-credentials" \
-	    -a "$$(whoami)" \
-	    ~/Library/Keychains/login.keychain-db && \
-	  echo "✅ 설정 완료: 이후 make update 후에도 Keychain 팝업이 발생하지 않습니다." || \
-	  echo "⚠️  설정 실패: 로그인 비밀번호를 올바르게 입력했는지 확인하세요."
 
 # ─── 설치 ────────────────────────────────────────────────
 

@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 /// OAuth 토큰 관리자.
 ///
@@ -61,8 +60,8 @@ actor OAuthTokenManager {
             }
         }
 
-        // 3단계: Keychain에서 자격증명 로드 (팝업 발생 가능)
-        let credentials = try loadFromKeychain()
+        // 3단계: 저장된 자격증명 로드 (Keychain → 파일 폴백 순)
+        let credentials = try loadCredentials()
 
         // HTTP 갱신 전에 refresh token을 먼저 캐시한다.
         // 갱신이 실패하더라도 이후 Stage 2에서 재시도할 수 있다.
@@ -84,10 +83,10 @@ actor OAuthTokenManager {
         return credentials.accessToken
     }
 
-    // MARK: - Keychain 읽기
+    // MARK: - 자격증명 로드
 
-    private func loadFromKeychain() throws -> OAuthCredentials {
-        // 1순위: "Claude Code-credentials" (Claude Code CLI)
+    private func loadCredentials() throws -> OAuthCredentials {
+        // 1순위: Keychain "Claude Code-credentials" (Claude Code CLI)
         if let credentials = try? readKeychain(
             service: "Claude Code-credentials",
             account: NSUserName()
@@ -95,11 +94,18 @@ actor OAuthTokenManager {
             return credentials
         }
 
-        // 2순위: 환경변수 (DEBUG 빌드 전용 테스트 폴백).
+        // 2순위: ~/.claude/.credentials.json (Claude Code CLI의 파일 폴백).
+        // Claude Code는 Keychain을 사용할 수 없는 환경에서 자격증명을
+        // 이 파일에 저장하므로, 해당 사용자도 로그인 상태로 인식되어야 한다.
+        if let credentials = try? readCredentialsFile() {
+            return credentials
+        }
+
+        // 3순위: 환경변수 (DEBUG 빌드 전용 테스트 폴백).
         // 릴리즈 빌드에서는 환경변수를 통한 토큰 우회를 차단하여
         // 의도치 않은 토큰 노출을 방지한다.
         #if DEBUG
-        if let envToken = ProcessInfo.processInfo.environment["CLAUDE_OAUTH_TOKEN"] {
+        if let envToken = ProcessInfo.processInfo.environment["CLAUDE_CODE_OAUTH_TOKEN"] {
             return OAuthCredentials(
                 accessToken: envToken,
                 refreshToken: "",
@@ -111,23 +117,71 @@ actor OAuthTokenManager {
         throw ClaudeUsageError.credentialsNotFound
     }
 
+    /// Claude Code CLI의 자격증명 파일을 읽는다.
+    ///
+    /// Claude Code는 Keychain 접근이 불가능한 환경에서
+    /// `~/.claude/.credentials.json`에 Keychain 항목과 동일한
+    /// JSON 구조(`claudeAiOauth` 래퍼)로 자격증명을 저장한다.
+    /// Keychain 항목이 없어도 이 파일이 있으면 로그인 상태로 동작한다.
+    private func readCredentialsFile() throws -> OAuthCredentials {
+        let fileURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/.credentials.json")
+        let data = try Data(contentsOf: fileURL)
+        return try parseCredentialsData(data)
+    }
+
+    /// Keychain 항목을 `/usr/bin/security` 서브프로세스로 읽는다.
+    ///
+    /// SecItemCopyMatching(네이티브 API)으로 직접 읽으면 macOS가
+    /// "다른 앱의 비밀 정보 접근"으로 간주해 키체인 비밀번호 팝업을 띄운다.
+    /// 이 항목은 Claude Code CLI가 `security` 도구로 생성·갱신하므로,
+    /// 같은 `security` 도구를 통해 읽으면 항목 작성자와 접근자가 일치하여
+    /// 토큰 갱신·재로그인·앱 재빌드와 무관하게 팝업이 발생하지 않는다.
+    /// (claude CLI 자신이 팝업 없이 토큰을 읽는 것과 같은 원리)
     private func readKeychain(service: String, account: String) throws -> OAuthCredentials {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+        // 항목 없음(item not found)을 나타내는 security 도구의 종료 코드.
+        let securityExitCodeItemNotFound: Int32 = 44
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = [
+            "find-generic-password",
+            "-s", service,
+            "-a", account,
+            "-w",
         ]
 
-        var item: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        // stderr의 진단 메시지는 사용하지 않으므로 버린다.
+        process.standardError = FileHandle.nullDevice
 
-        guard status == errSecSuccess, let data = item as? Data else {
-            throw ClaudeUsageError.keychainReadFailed(status)
+        do {
+            try process.run()
+        } catch {
+            throw ClaudeUsageError.keychainReadFailed(-1)
         }
 
-        return try parseCredentialsData(data)
+        // 파이프 버퍼가 가득 차 교착되지 않도록 종료 대기 전에 출력을 먼저 읽는다.
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            if process.terminationStatus == securityExitCodeItemNotFound {
+                throw ClaudeUsageError.credentialsNotFound
+            }
+            throw ClaudeUsageError.keychainReadFailed(OSStatus(process.terminationStatus))
+        }
+
+        // `-w` 출력 끝에 붙는 개행을 제거한 뒤 파싱한다.
+        guard let raw = String(data: data, encoding: .utf8),
+              let credentialsData = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                  .data(using: .utf8),
+              !credentialsData.isEmpty else {
+            throw ClaudeUsageError.invalidCredentials
+        }
+
+        return try parseCredentialsData(credentialsData)
     }
 
     private func parseCredentialsData(_ data: Data) throws -> OAuthCredentials {
