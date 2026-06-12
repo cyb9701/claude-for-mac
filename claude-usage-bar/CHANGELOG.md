@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced Keychain access frequency to mitigate repeated password prompt — cached refresh token is used for HTTP renewal before falling back to Keychain
 - Keychain password popup no longer appears — credentials are now read via a `/usr/bin/security` subprocess (the same path Claude Code CLI uses to write them) instead of `SecItemCopyMatching`, so the keychain item's creator and accessor always match; `make setup-keychain` removed as it is no longer needed
 - DEBUG-only env var fallback now reads `CLAUDE_CODE_OAUTH_TOKEN` as documented (code previously read `CLAUDE_OAUTH_TOKEN`)
+- OAuth token refresh no longer fails with HTTP 400 — the token endpoint requires a JSON body with `client_id` (Claude Code's public OAuth client ID); the previous form-urlencoded request without `client_id` was rejected with "Invalid request format" before token validation, surfacing as "OAuth 토큰 갱신에 실패했습니다" whenever the cached access token expired
+- Refreshed tokens are now written back to the original credential store (Keychain via `security -i` stdin, or `~/.claude/.credentials.json`) — prevents Claude Code CLI from being logged out when the server rotates the refresh token; all non-token fields (scopes, subscriptionType, organizationUuid) are preserved
 
 ## [0.2.0] - 2026-03-31
 

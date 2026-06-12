@@ -65,7 +65,9 @@ UI/
 2. Keychain 항목이 없으면 `~/.claude/.credentials.json` 파일 폴백 (Claude Code가 Keychain 미사용 환경에서 저장하는 동일 구조의 JSON)
 3. JSON 디코딩 → `accessToken`, `refreshToken`, `expiresAt`(ms) 추출
 4. 만료 60초 전 자동 갱신: `POST https://platform.claude.com/v1/oauth/token`
-5. 테스트 폴백: 환경 변수 `CLAUDE_CODE_OAUTH_TOKEN` (`#if DEBUG` 빌드 한정)
+   - 요청은 **JSON 본문 + `client_id`**(Claude Code 공개 OAuth 클라이언트 ID) 필수 — form 인코딩이나 `client_id` 누락 시 토큰 검증 전에 400 "Invalid request format"으로 거절됨
+5. 갱신 성공 시 새 토큰을 원래 저장소에 write-back (Keychain은 `security -i` stdin 방식, 파일은 0600 권한 유지) — 토큰 로테이션으로 Claude Code CLI가 로그아웃되는 것을 방지하며, 토큰 외 필드(scopes, subscriptionType 등)는 보존
+6. 테스트 폴백: 환경 변수 `CLAUDE_CODE_OAUTH_TOKEN` (`#if DEBUG` 빌드 한정)
 
 **전제 조건**: Claude Code CLI가 설치되고 로그인된 상태여야 함
 

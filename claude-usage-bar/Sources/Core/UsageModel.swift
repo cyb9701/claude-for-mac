@@ -126,6 +126,7 @@ struct UsageWindow: Decodable {
 
 enum ClaudeUsageError: LocalizedError {
     case keychainReadFailed(OSStatus)
+    case keychainWriteFailed(OSStatus)
     case credentialsNotFound
     case invalidCredentials
     case tokenRefreshFailed
@@ -137,6 +138,8 @@ enum ClaudeUsageError: LocalizedError {
         switch self {
         case .keychainReadFailed(let status):
             return "Keychain 읽기 실패 (오류: \(status))"
+        case .keychainWriteFailed(let status):
+            return "Keychain 쓰기 실패 (오류: \(status))"
         case .credentialsNotFound:
             return "Claude Code 자격증명을 찾을 수 없습니다. Claude Code를 먼저 로그인해주세요."
         case .invalidCredentials:
